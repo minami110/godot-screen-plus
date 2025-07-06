@@ -14,24 +14,22 @@ const RESOLUTION_QHD_PLUS := Vector2i(3200, 1800)
 ## スクリーンモード（ウィンドウ／フルスクリーン／排他フルスクリーン）を
 ## 変更し、完了まで非同期で待機する。
 ##
-## @param new_mode   目標 WindowMode（DisplayServer.WINDOW_MODE_*）
-## @param screen_id  対象スクリーン ID（フルスクリーン系のみ有意）
+## @param target_mode 目標 WindowMode（DisplayServer.WINDOW_MODE_*）
+## @param screen_id   対象スクリーン ID（フルスクリーン系のみ有意）
 ## @param window_size ウィンドウモード時に設定する解像度
-static func set_screen_mode_async(new_mode: DisplayServer.WindowMode, screen_id: int, window_size: Vector2i) -> void:
-    print("[ScreenPlus] Update Screen Mode: %d Screen: %d Size %s" % [new_mode, screen_id, window_size])
+static func set_screen_mode_async(target_mode: DisplayServer.WindowMode, screen_id: int, window_size: Vector2i) -> void:
+    print("[ScreenPlus] Update Screen Mode: %s (Screen: %d / Size %s)" % [__screen_mode_to_string(target_mode), screen_id, window_size])
 
-    if new_mode == DisplayServer.WINDOW_MODE_WINDOWED:
-        await _set_windowed_mode_async(new_mode, window_size)
+    match target_mode:
+        DisplayServer.WINDOW_MODE_WINDOWED:
+            await __set_windowed_mode_async(window_size)
 
-    elif new_mode == DisplayServer.WINDOW_MODE_FULLSCREEN:
-        await __set_fullscreen_mode_async(new_mode, screen_id)
+        DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+            await __set_fullscreen_mode_async(target_mode, screen_id)
 
-    elif new_mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
-        await __set_fullscreen_mode_async(new_mode, screen_id)
-
-    else:
-        push_error("[ScreenPlus] Invalid window mode: %d" % new_mode)
-        return
+        _:
+            push_error("[ScreenPlus] Invalid window mode: %d" % target_mode)
+            return
 
 ## ウィンドウモード時、現在スクリーンの中央にウィンドウを配置する。
 ##
@@ -89,16 +87,15 @@ static func get_center_position_current_screen() -> Vector2i:
 # --------------------------------------------
 
 ## ウィンドウモードへの変更処理
-static func _set_windowed_mode_async(new_mode: int, window_size: Vector2i, centered: bool = true) -> void:
+static func __set_windowed_mode_async(window_size: Vector2i, centered: bool = true) -> void:
     var prev_mode := DisplayServer.window_get_mode(DisplayServer.MAIN_WINDOW_ID)
     var prev_size := DisplayServer.window_get_size(DisplayServer.MAIN_WINDOW_ID)
 
     # モード変更
-    if prev_mode != new_mode:
-        DisplayServer.window_set_mode(new_mode, DisplayServer.MAIN_WINDOW_ID)
+    if prev_mode != DisplayServer.WINDOW_MODE_WINDOWED:
+        DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED, DisplayServer.MAIN_WINDOW_ID)
 
-    # プラットフォームが待機を必要とする場合のみ待機処理を実行
-    # モードとサイズの変更を一括で待機
+    # ウィンドウモードへの変更完了を待機
     if not await __wait_for_main_window_windowed():
         push_error("[Graphics] Windowed mode change timeout")
         return
@@ -107,12 +104,13 @@ static func _set_windowed_mode_async(new_mode: int, window_size: Vector2i, cente
     if prev_size != window_size:
         DisplayServer.window_set_size(window_size)
 
+    # サイズ変更の完了を待機
     if not await __wait_for_main_window_size(window_size):
         push_error("[Graphics] Window size change timeout")
         return
 
+    # ウィンドウをスクリーンの中央に移動
     if centered:
-        # ウィンドウをスクリーンの中央に移動
         move_main_window_to_screen_center()
 
 
@@ -140,7 +138,7 @@ static func __set_fullscreen_mode_async(new_mode: int, screen_id: int) -> void:
         # エンジンバグ対策: window_set_current_screen は ウィンドウモードでのみ確実に動作する
         # フルスクリーンモードでのスクリーン変更は、一度ウィンドウモードを経由する必要がある
         await __set_current_screen_async(screen_id)
-        prev_mode = DisplayServer.WindowMode.WINDOW_MODE_WINDOWED
+        prev_mode = DisplayServer.WINDOW_MODE_WINDOWED
 
     # モード変更（スクリーン変更が必要な場合は後で再度実行）
     if prev_mode != new_mode:
@@ -264,4 +262,4 @@ static func __screen_mode_to_string(mode: int) -> String:
         DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
             return "Exclusive Fullscreen"
         _:
-            return "Unknown Mode"
+            return "WindowMode(%d)" % mode
