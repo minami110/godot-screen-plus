@@ -4,6 +4,7 @@
 # Export Ignores
 /.github/ export-ignore
 /test/ export-ignore
+/scenes/ export-ignore
 /.editorconfig export-ignore
 /.gitignore export-ignore
 /.gitattributes export-ignore
