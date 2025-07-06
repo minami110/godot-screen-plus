@@ -3,9 +3,14 @@ class_name ScreenPlus extends Node
 const __MAX_WAIT_FRAMES := 180 # 最大3秒（60FPSで180フレーム）
 
 const RESOLUTION_HD := Vector2i(1280, 720)
+const RESOLUTION_FWXGA := Vector2i(1366, 768)
+const RESOLUTION_HD_PLUS := Vector2i(1600, 900)
 const RESOLUTION_FULL_HD := Vector2i(1920, 1080)
 const RESOLUTION_WQHD := Vector2i(2560, 1440)
 const RESOLUTION_QHD_PLUS := Vector2i(3200, 1800)
+const RESOLUTION_4K := Vector2i(3840, 2160)
+const RESOLUTION_5K := Vector2i(5120, 2880)
+const RESOLUTION_8K := Vector2i(7680, 4320)
 
 # --------------------------------------------
 # Public API
@@ -46,32 +51,57 @@ static func move_main_window_to_screen_center() -> void:
     DisplayServer.window_set_position(new_screen_pos)
 
 
-## 現在アプリケーションが表示されているディスプレイにおいて, 現在利用可能な解像度のリストを取得する
-static func get_supported_resolutions_current_screen() -> Array[Vector2i]:
-    # 現在ウインドウがあるスクリーンの Idを取得
-    var screen_id := DisplayServer.window_get_current_screen()
-    var native_size := DisplayServer.screen_get_usable_rect(screen_id).size
-
+## 指定したサイズ以下で利用可能な解像度のリストを取得する
+## @param max_size 最大解像度（この値以下または未満の解像度を返す）
+## @param inclusive trueの場合は以下、falseの場合は未満の解像度を返す（デフォルト: true）
+static func get_supported_resolutions_current_screen(max_size: Vector2i, inclusive: bool = true) -> Array[Vector2i]:
     # 1280x720 (720p) を最低解像度とした, 16:9 の倍数の解像度のリスト
     # ref: https://en.wikipedia.org/wiki/16:9_aspect_ratio
-    const resFwxga := Vector2i(1366, 768)
-    const resHdPlus := Vector2i(1600, 900)
-    const resQhd := RESOLUTION_WQHD
-    const resQhdPlus := RESOLUTION_QHD_PLUS
-    const res4k := Vector2i(3840, 2160)
-    const res5k := Vector2i(5120, 2880)
-    const res8k := Vector2i(7680, 4320)
-
-    # ネイティブ解像度よりも小さい解像度のリストを作成する, HD は最低解像度とするので必ず入れる
+    # 指定されたmax_sizeよりも小さい解像度のリストを作成する, HD は最低解像度とするので必ず入れる
     var result: Array[Vector2i] = [RESOLUTION_HD]
 
-    const res_list: Array[Vector2i] = [resFwxga, resHdPlus, RESOLUTION_FULL_HD, resQhd, resQhdPlus, res4k, res5k, res8k]
+    const res_list: Array[Vector2i] = [RESOLUTION_FWXGA, RESOLUTION_HD_PLUS, RESOLUTION_FULL_HD, RESOLUTION_WQHD, RESOLUTION_QHD_PLUS, RESOLUTION_4K, RESOLUTION_5K, RESOLUTION_8K]
     for res in res_list:
-        if res.x <= native_size.x and res.y <= native_size.y:
-            result.push_back(res)
+        if inclusive:
+            # 以下の場合（max_sizeを含む）
+            if res.x <= max_size.x and res.y <= max_size.y:
+                result.push_back(res)
+        else:
+            # 未満の場合（max_sizeを含まない）
+            if res.x < max_size.x and res.y < max_size.y:
+                result.push_back(res)
 
     result.make_read_only()
     return result
+
+## 指定した解像度未満で最大の16:9解像度を取得する
+## @param target_resolution 基準となる解像度
+## @return 指定解像度未満の最大解像度。見つからない場合は Vector2i.ZERO を返す。
+static func get_max_resolution_below(target_resolution: Vector2i) -> Vector2i:
+    # すべての16:9解像度を昇順で定義
+    const all_resolutions: Array[Vector2i] = [
+        RESOLUTION_HD, # 1280x720
+        RESOLUTION_FWXGA, # 1366x768
+        RESOLUTION_HD_PLUS, # 1600x900
+        RESOLUTION_FULL_HD, # 1920x1080
+        RESOLUTION_WQHD, # 2560x1440
+        RESOLUTION_QHD_PLUS, # 3200x1800
+        RESOLUTION_4K, # 3840x2160
+        RESOLUTION_5K, # 5120x2880
+        RESOLUTION_8K # 7680x4320
+    ]
+
+    var max_resolution: Vector2i = Vector2i.ZERO
+
+    # 昇順でループし、target_resolution未満の最大解像度を見つける
+    for res in all_resolutions:
+        if res.x < target_resolution.x and res.y < target_resolution.y:
+            max_resolution = res
+        else:
+            # target_resolution以上になったらループを終了
+            break
+
+    return max_resolution
 
 ## 現在表示中のスクリーンの中央ピクセル座標を返す。
 static func get_center_position_current_screen() -> Vector2i:
@@ -154,8 +184,6 @@ static func __set_fullscreen_mode_async(new_mode: int, screen_id: int) -> void:
 ## 現在のメインウィンドウのスクリーンを非同期で変更する
 ## Godot 4.4 の仕様で, この関数を実行すると必ず Windowed モードに変更される
 static func __set_current_screen_async(target_screen_id: int) -> void:
-    var current_mode := DisplayServer.window_get_mode(DisplayServer.MAIN_WINDOW_ID)
-
     # フルスクリーンモードの場合は一度ウィンドウモードにしてからスクリーン変更
     if __is_main_window_fullscreen():
         print("[Graphics] Temporarily switching to windowed mode for screen change (Engine bug workaround)")
@@ -164,8 +192,7 @@ static func __set_current_screen_async(target_screen_id: int) -> void:
         DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED, DisplayServer.MAIN_WINDOW_ID)
 
         # ウィンドウモードへの変更完了を待機
-        var success := await __wait_for_main_window_windowed()
-        if not success:
+        if not await __wait_for_main_window_windowed():
             push_error("[Graphics] Failed to switch to windowed mode for screen change")
             return
 
@@ -174,8 +201,7 @@ static func __set_current_screen_async(target_screen_id: int) -> void:
     # スクリーン変更を実行
     DisplayServer.window_set_current_screen(target_screen_id, DisplayServer.MAIN_WINDOW_ID)
 
-    var success := await __wait_for_main_window_screen_change(target_screen_id)
-    if not success:
+    if not await __wait_for_main_window_screen_change(target_screen_id):
         push_error("[Graphics] Failed to change screen for main window")
         return
 
