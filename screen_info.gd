@@ -38,6 +38,10 @@ func _process(_delta: float) -> void:
     var window_size := DisplayServer.window_get_size(DisplayServer.MAIN_WINDOW_ID)
     info += "Current Window Resolution: %dx%d\n" % [window_size.x, window_size.y]
 
+    # Get the current window position
+    var window_position := DisplayServer.window_get_position(DisplayServer.MAIN_WINDOW_ID)
+    info += "Current Window Position: (%d, %d)\n" % [window_position.x, window_position.y]
+
     # Screen info
     for i in range(screen_count):
         info += "----- Screen %d -----\n" % i

@@ -89,7 +89,7 @@ static func get_center_position_current_screen() -> Vector2i:
 # --------------------------------------------
 
 ## ウィンドウモードへの変更処理
-static func _set_windowed_mode_async(new_mode: int, window_size: Vector2i) -> void:
+static func _set_windowed_mode_async(new_mode: int, window_size: Vector2i, centered: bool = true) -> void:
     var prev_mode := DisplayServer.window_get_mode(DisplayServer.MAIN_WINDOW_ID)
     var prev_size := DisplayServer.window_get_size(DisplayServer.MAIN_WINDOW_ID)
 
@@ -97,15 +97,23 @@ static func _set_windowed_mode_async(new_mode: int, window_size: Vector2i) -> vo
     if prev_mode != new_mode:
         DisplayServer.window_set_mode(new_mode, DisplayServer.MAIN_WINDOW_ID)
 
-    # ウィンドウサイズ変更
-    if prev_size != window_size:
-        DisplayServer.window_set_size(window_size)
-
     # プラットフォームが待機を必要とする場合のみ待機処理を実行
     # モードとサイズの変更を一括で待機
     if not await __wait_for_main_window_windowed():
         push_error("[Graphics] Windowed mode change timeout")
         return
+
+    # ウィンドウサイズ変更
+    if prev_size != window_size:
+        DisplayServer.window_set_size(window_size)
+
+    if not await __wait_for_main_window_size(window_size):
+        push_error("[Graphics] Window size change timeout")
+        return
+
+    if centered:
+        # ウィンドウをスクリーンの中央に移動
+        move_main_window_to_screen_center()
 
 
 ## フルスクリーンモードへの変更処理
@@ -187,6 +195,7 @@ static func __wait_for_main_window_windowed() -> bool:
     push_error("[ScreenPlus] Main window did not switch to windowed mode in time.")
     return false
 
+
 static func __wait_for_main_window_fullscreen() -> bool:
     var frame_count := 0
     while frame_count < __MAX_WAIT_FRAMES:
@@ -200,6 +209,18 @@ static func __wait_for_main_window_fullscreen() -> bool:
     push_error("[ScreenPlus] Main window did not switch to fullscreen mode in time.")
     return false
 
+static func __wait_for_main_window_size(target_size: Vector2i) -> bool:
+    var frame_count := 0
+    while frame_count < __MAX_WAIT_FRAMES:
+        var current_size := DisplayServer.window_get_size(DisplayServer.MAIN_WINDOW_ID)
+        if current_size == target_size:
+            return true
+        print("[ScreenPlus] Waiting for main window size to change... Frame: %d Current Size: %s Target Size: %s" % [frame_count, current_size, target_size])
+        await __wait_process_frame(1)
+        frame_count += 1
+
+    push_error("[ScreenPlus] Main window size did not change to %s in time." % target_size)
+    return false
 
 static func __wait_for_main_window_screen_change(target_screen: int) -> bool:
     var frame_count := 0
