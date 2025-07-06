@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://beo3nytcumg31"]
 
-[ext_resource type="Script" uid="uid://ds1g2yjs3wwg0" path="res://main.gd" id="1_ig7tw"]
-[ext_resource type="Script" uid="uid://bywvd3xfujrtt" path="res://screen_info.gd" id="2_0xm2m"]
+[ext_resource type="Script" uid="uid://ds1g2yjs3wwg0" path="res://test/main.gd" id="1_ig7tw"]
+[ext_resource type="Script" uid="uid://bywvd3xfujrtt" path="res://test/screen_info.gd" id="2_0xm2m"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
