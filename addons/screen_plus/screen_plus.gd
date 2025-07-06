@@ -76,8 +76,8 @@ static func get_supported_resolutions_current_screen(max_size: Vector2i, inclusi
 
 ## 指定した解像度未満で最大の16:9解像度を取得する
 ## @param target_resolution 基準となる解像度
-## @return 指定解像度未満の最大解像度。見つからない場合はnull
-static func get_max_resolution_below(target_resolution: Vector2i) -> Variant:
+## @return 指定解像度未満の最大解像度。見つからない場合は Vector2i.ZERO を返す。
+static func get_max_resolution_below(target_resolution: Vector2i) -> Vector2i:
     # すべての16:9解像度を昇順で定義
     const all_resolutions: Array[Vector2i] = [
         RESOLUTION_HD, # 1280x720
@@ -91,7 +91,7 @@ static func get_max_resolution_below(target_resolution: Vector2i) -> Variant:
         RESOLUTION_8K # 7680x4320
     ]
 
-    var max_resolution: Variant = null
+    var max_resolution: Vector2i = Vector2i.ZERO
 
     # 昇順でループし、target_resolution未満の最大解像度を見つける
     for res in all_resolutions:
