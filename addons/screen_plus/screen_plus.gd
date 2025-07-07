@@ -1,6 +1,6 @@
 class_name ScreenPlus extends Node
 
-const __MAX_WAIT_FRAMES := 180 # 最大3秒（60FPSで180フレーム）
+const __MAX_WAIT_FRAMES := 120 # 最大2秒（60FPSで120フレーム）
 
 const RESOLUTION_HD := Vector2i(1280, 720)
 const RESOLUTION_FWXGA := Vector2i(1366, 768)
@@ -127,7 +127,7 @@ static func __set_windowed_mode_async(window_size: Vector2i, centered: bool = tr
 
     # ウィンドウモードへの変更完了を待機
     if not await __wait_for_main_window_windowed():
-        push_error("[Graphics] Windowed mode change timeout")
+        push_error("[ScreenPlus] Windowed mode change timeout")
         return
 
     # ウィンドウサイズ変更
@@ -136,8 +136,11 @@ static func __set_windowed_mode_async(window_size: Vector2i, centered: bool = tr
 
     # サイズ変更の完了を待機
     if not await __wait_for_main_window_size(window_size):
-        push_error("[Graphics] Window size change timeout")
+        push_error("[ScreenPlus] Window size change timeout")
         return
+
+    # ウィンドウのフォーカスを再設定（Linux固有の問題対策, Windows では無視される）
+    __refocus_main_window_specific_platform()
 
     # ウィンドウをスクリーンの中央に移動
     if centered:
@@ -154,7 +157,6 @@ static func __set_windowed_mode_async(window_size: Vector2i, centered: bool = tr
 static func __set_fullscreen_mode_async(new_mode: int, screen_id: int) -> void:
     print("[ScreenPlus] Update Fullscreen Mode: %s Screen: %d" % [__screen_mode_to_string(new_mode), screen_id])
 
-    var prev_mode := DisplayServer.window_get_mode(DisplayServer.MAIN_WINDOW_ID)
     var prev_screen := DisplayServer.window_get_current_screen(DisplayServer.MAIN_WINDOW_ID)
 
     # スクリーンが存在するか確認
@@ -168,9 +170,9 @@ static func __set_fullscreen_mode_async(new_mode: int, screen_id: int) -> void:
         # エンジンバグ対策: window_set_current_screen は ウィンドウモードでのみ確実に動作する
         # フルスクリーンモードでのスクリーン変更は、一度ウィンドウモードを経由する必要がある
         await __set_current_screen_async(screen_id)
-        prev_mode = DisplayServer.WINDOW_MODE_WINDOWED
 
     # モード変更（スクリーン変更が必要な場合は後で再度実行）
+    var prev_mode := DisplayServer.window_get_mode(DisplayServer.MAIN_WINDOW_ID)
     if prev_mode != new_mode:
         DisplayServer.window_set_mode(new_mode, DisplayServer.MAIN_WINDOW_ID)
 
@@ -184,26 +186,45 @@ static func __set_fullscreen_mode_async(new_mode: int, screen_id: int) -> void:
 ## 現在のメインウィンドウのスクリーンを非同期で変更する
 ## Godot 4.4 の仕様で, この関数を実行すると必ず Windowed モードに変更される
 static func __set_current_screen_async(target_screen_id: int) -> void:
-    # フルスクリーンモードの場合は一度ウィンドウモードにしてからスクリーン変更
-    if __is_main_window_fullscreen():
-        print("[Graphics] Temporarily switching to windowed mode for screen change (Engine bug workaround)")
+    var os_name := OS.get_name()
 
-        # 一時的にウィンドウモードに変更
-        DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED, DisplayServer.MAIN_WINDOW_ID)
+    # Linux では直接変更していい?
+    # むしろ, Window モードを経由するほうが安定しない
+    if os_name == "Linux":
+        DisplayServer.window_set_current_screen(target_screen_id, DisplayServer.MAIN_WINDOW_ID)
 
-        # ウィンドウモードへの変更完了を待機
-        if not await __wait_for_main_window_windowed():
-            push_error("[Graphics] Failed to switch to windowed mode for screen change")
-            return
+    # Windows 固有の問題? Linux では再現しない
+    # フルスクリーンから他のモニターにフルスクリーンに遷移する場合, Window モードを挟んだほうが安定する
+    else:
+        # フルスクリーンモードの場合は一度ウィンドウモードにしてからスクリーン変更
+        if __is_main_window_fullscreen():
+            print("[Graphics] Temporarily switching to windowed mode for screen change (Engine bug workaround)")
 
-    # Note: Godot 4.4 時点で, スクリーン変更はウィンドウモードのみで機能する
-    # この時点では必ずウィンドウモードになっている
-    # スクリーン変更を実行
-    DisplayServer.window_set_current_screen(target_screen_id, DisplayServer.MAIN_WINDOW_ID)
+            # 一時的にウィンドウモードに変更
+            DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED, DisplayServer.MAIN_WINDOW_ID)
 
+            # ウィンドウモードへの変更完了を待機
+            if not await __wait_for_main_window_windowed():
+                push_error("[Graphics] Failed to switch to windowed mode for screen change")
+                return
+
+        # スクリーン変更を実行
+        DisplayServer.window_set_current_screen(target_screen_id, DisplayServer.MAIN_WINDOW_ID)
+
+    # スクリーン変更を待機する
     if not await __wait_for_main_window_screen_change(target_screen_id):
         push_error("[Graphics] Failed to change screen for main window")
         return
+
+
+static func __refocus_main_window_specific_platform() -> void:
+    if OS.get_name() == "Linux":
+        var scene_tree := Engine.get_main_loop()
+        if scene_tree is SceneTree:
+            var main_window: Window = scene_tree.root
+            # Linuxではウィンドウサイズ変更後にフォーカスを再設定する必要がある
+            main_window.grab_focus()
+            print("[ScreenPlus] Linux: Re-grabbing focus after window size change")
 
 
 static func __wait_for_main_window_windowed() -> bool:
